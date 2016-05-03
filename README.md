@@ -84,3 +84,22 @@ Phoenix中数值数据类型INTEGER、BIGINT等的序列化方式(byte[]数组)�
 	  } // , { more other config } , ...
 	]
 
+## hbase-indexer对phoenix salted table行键的适配
+
+### 1. 背景
+
+Phoenix Salted Table会在row key第一个byte里面插入一个字节，这个字节是根据row key的hash值对SALT_BUCKETS取模得到。SALT_BUCKETS的取值为1到256。由于hbase-indexer并没有适配phoenix对salted table的处理，因此当表为salted table并利用hbase-indexer往solr同步数据时，hbase-indexer还原行键值肯定会出现问题（因为rowkey第一个字节的影响）。因此，我们需要对hbase-indexer处理phoenix salted table做一个适配。
+
+### 2.实现
+
+通过cdh官方文档对于hbase-indexer的介绍以及hbase-indexer github上面的介绍，我们可以发现，其实对于row key的同步，也存在一定的映射处理规则。
+
+[cdh官方文档地址](http://www.cloudera.com/documentation/archive/search/1-3-0/Cloudera-Search-User-Guide/csug_hbase_batch_indexer.html#xd_583c10bfdbd326ba--43d5fd93-1410993f8c2--7ed9__section_fbd_3rs_4k)
+
+[hbase-indexer github地址](https://github.com/NGDATA/hbase-indexer/wiki/Indexer-configuration#unique-key-formatter)
+
+默认情况下使用的是 `com.ngdata.hbaseindexer.uniquekey.StringUniqueKeyFormatter` 来将hbase rowkey格式化并转换到solr中。而上面提到unique-key-formatter必须实现 `com.ngdata.hbaseindexer.uniquekey.UniqueKeyFormatter`，因此如果我们要扩展自定义的rowkey格式化转换类，必须实现这个接口。也就是说我们需要通过实现一个自定义的unique-key-formatter来适配salted table行键到solr的格式化转换关系。
+
+我们可以直接继承StringUniqueKeyFormatter并重写其中处理rowkey的方法来过滤rowkey的第一个字节即可。
+
+代码详见`com.gosun.hbaseindexer.uniquekey.PhoenixSaltedUniqueKeyFormatter`
